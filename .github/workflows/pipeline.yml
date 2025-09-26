@@ -10,6 +10,10 @@ on:
       - dev
       - main
 
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
@@ -70,11 +74,23 @@ jobs:
     if: needs.detect-changes.outputs.frontend == 'true'
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
         with:
-          node-version: '18'
-      - run: npm install --prefix frontend
-      - run: npm test --prefix frontend
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to Azure Container Registry
+        run: az acr login --name ${{ env.ACR_LOGIN_SERVER }}
+
+      - name: Build and Push Frontend Image
+        run: |
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:latest ./frontend/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
+
+      - name: Logout from Azure
+        run: az logout
+        if: always()
 
   backend-cd:
     runs-on: ubuntu-latest
@@ -89,4 +105,3 @@ jobs:
     if: github.ref == 'refs/heads/dev'
     steps:
       - run: echo "Deploy frontend to dev (stub for now)"
-
