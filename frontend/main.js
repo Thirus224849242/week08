@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let cart = [];
     let productsCache = {}; // Cache products fetched to easily get details for cart items
 
-    // --- Utility Functions ---
+    // --- Utility Functions ----
 
     // Function to display messages to the user (success, error, info)
     function showMessage(message, type = 'info') {
