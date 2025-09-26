@@ -26,9 +26,13 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0   # ensure git history is available
+
       - uses: dorny/paths-filter@v2
         id: filter
         with:
+          base: ${{ github.event.before }}   # compare only the new commit(s) in this push
           filters: |
             backend:
               - 'backend/**'
@@ -156,7 +160,6 @@ jobs:
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
-      # optional: only if frontend needs backend service IPs injected
       - name: Inject Backend IPs into Frontend
         run: |
           sed -i "s|_PRODUCT_API_URL_|http://product-service.default.svc.cluster.local|g" frontend/main.js
