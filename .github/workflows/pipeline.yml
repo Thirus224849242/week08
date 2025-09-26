@@ -153,6 +153,10 @@ jobs:
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+          
+      # Login to Azure Container Registry (ACR)
+      - name: Login to Azure Container Registry
+        run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
       - name: Inject Backend IPs into Frontend
         run: |
@@ -177,4 +181,5 @@ jobs:
         run: |
           cd k8s/
           kubectl apply -f frontend.yaml
+
 
