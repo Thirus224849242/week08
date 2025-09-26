@@ -75,15 +75,31 @@ jobs:
         run: flake8 backend/order_service
         continue-on-error: true
 
+  
 
-      - name: Run backend tests
+      - name: Run product_service tests
+        working-directory: backend/product_service
         env:
           PRODUCT_DB_HOST: localhost
           PRODUCT_DB_PORT: 5432
           ORDER_DB_HOST: localhost
           ORDER_DB_PORT: 5433
         run: |
-          pytest -q
+          # avoid stale caches confusing module resolution
+          find . -name "__pycache__" -type d -prune -exec rm -rf {} +
+          pytest -q tests
+
+      - name: Run order_service tests
+        working-directory: backend/order_service
+         env:
+         PRODUCT_DB_HOST: localhost
+         PRODUCT_DB_PORT: 5432
+         ORDER_DB_HOST: localhost
+         ORDER_DB_PORT: 5433
+         run: |
+           find . -name "__pycache__" -type d -prune -exec rm -rf {} +
+           pytest -q tests
+
 
   # Job 2: Build & push Docker images for Product and Order services
   build_and_push_images:
