@@ -1,6 +1,8 @@
-# week08/.github/workflows/backend_ci.yml
-# Week 08 CI run 
-name: Backend CI - Test, Build and Push Images to ACR
+name: Backend CI
+
+on:
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,33 +12,25 @@ concurrency:
   group: ci-backend-${{ github.ref }}
   cancel-in-progress: true
 
-on:
-  workflow_call:
-  workflow_dispatch:
-
 jobs:
-  # Job 1: Run tests and linting for all backend services
   test_and_lint_backends:
-    runs-on: ubuntu-latest # Use a GitHub-hosted runner
+    runs-on: ubuntu-latest
 
     services:
-      # Product DB container
       product_db:
         image: postgres:15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: products
-        # Make pg_isready available so the service is healthy before tests
         options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
         ports:
-          - 5432:5432
+          - "5432:5432"
 
-      # Order DB container
       order_db:
         image: postgres:15
         env:
@@ -44,29 +38,29 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: orders
         options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
         ports:
-          - 5433:5432
+          - "5433:5432"
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Set up Python for tests/linters
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install backend dependencies
+      - name: Install deps
         run: |
           pip install -r backend/product_service/requirements.txt
           pip install -r backend/order_service/requirements.txt
           pip install pytest flake8
 
+      # Make lint advisory so it won't fail CI
       - name: Lint product_service (advisory)
         run: flake8 backend/product_service
         continue-on-error: true
@@ -75,8 +69,7 @@ jobs:
         run: flake8 backend/order_service
         continue-on-error: true
 
-  
-
+      # Run tests per service to avoid pytest import collisions
       - name: Run product_service tests
         working-directory: backend/product_service
         env:
@@ -85,57 +78,16 @@ jobs:
           ORDER_DB_HOST: localhost
           ORDER_DB_PORT: 5433
         run: |
-          # avoid stale caches confusing module resolution
           find . -name "__pycache__" -type d -prune -exec rm -rf {} +
           pytest -q tests
 
       - name: Run order_service tests
         working-directory: backend/order_service
-         env:
-         PRODUCT_DB_HOST: localhost
-         PRODUCT_DB_PORT: 5432
-         ORDER_DB_HOST: localhost
-         ORDER_DB_PORT: 5433
-         run: |
-           find . -name "__pycache__" -type d -prune -exec rm -rf {} +
-           pytest -q tests
-
-
-  # Job 2: Build & push Docker images for Product and Order services
-  build_and_push_images:
-    needs: test_and_lint_backends
-    runs-on: ubuntu-latest
-
-    env:
-      ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }} # e.g. wk8acr.azurecr.io
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # Azure login using a Service Principal secret
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      # Login to Azure Container Registry (ACR)
-      - name: Login to Azure Container Registry
-        run: az acr login --name ${{ env.ACR_LOGIN_SERVER }}
-
-      # Build and Push Docker image for Product Service
-      - name: Build and Push Product Service Image
+        env:
+          PRODUCT_DB_HOST: localhost
+          PRODUCT_DB_PORT: 5432
+          ORDER_DB_HOST: localhost
+          ORDER_DB_PORT: 5433
         run: |
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:latest ./backend/product_service/
-          docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:latest
-
-      # Build and Push Docker image for Order Service
-      - name: Build and Push Order Service Image
-        run: |
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:latest ./backend/order_service/
-          docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:latest
-
-      # Logout from Azure for security (runs even if image push fails)
-      - name: Logout from Azure
-        run: az logout
-        if: always()
+          find . -name "__pycache__" -type d -prune -exec rm -rf {} +
+          pytest -q tests
