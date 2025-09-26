@@ -7,6 +7,7 @@ on:
     paths:
       - 'backend/**'
       - 'frontend/**'
+      - '.github/workflows/**'
   push:
     branches: [dev]                  # Auto deploy to DEV on pushes to dev
     paths:
@@ -107,3 +108,4 @@ jobs:
       aks_cluster_name: ${{ vars.AKS_CLUSTER }}
       aks_resource_group: ${{ vars.AKS_RG }}
     secrets: inherit
+
