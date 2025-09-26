@@ -1,0 +1,108 @@
+name: Unified CI/CD
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+  push:
+    branches: [dev]                  # Auto deploy to DEV on pushes to dev
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+  workflow_dispatch:
+    inputs:
+      prod:
+        description: 'Run PROD deployment'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------- CI on PRs ----------
+  detect_changes:
+    if: github.event_name == 'pull_request'
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+
+  backend_ci:
+    if: github.event_name == 'pull_request' && needs.detect_changes.outputs.backend == 'true'
+    needs: detect_changes
+    name: Backend CI
+    uses: ./.github/workflows/backend_ci.yml
+    secrets: inherit
+
+  frontend_ci:
+    if: github.event_name == 'pull_request' && needs.detect_changes.outputs.frontend == 'true'
+    needs: detect_changes
+    name: Frontend CI
+    uses: ./.github/workflows/frontend_ci.yml
+    secrets: inherit
+
+  # ---------- CD to DEV on push:dev ----------
+  dev_backend_cd:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    name: Backend CD (dev)
+    uses: ./.github/workflows/backend-cd.yml
+    with:
+      aks_cluster_name: ${{ vars.AKS_CLUSTER }}
+      aks_resource_group: ${{ vars.AKS_RG }}
+      aks_acr_name: ${{ vars.AKS_ACR_NAME }}
+    secrets: inherit
+
+  dev_frontend_cd:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    name: Frontend CD (dev)
+    needs: dev_backend_cd
+    uses: ./.github/workflows/frontend-cd.yml
+    with:
+      product_api_ip: ${{ needs.dev_backend_cd.outputs.product_ip }}
+      order_api_ip:   ${{ needs.dev_backend_cd.outputs.order_ip }}
+      aks_cluster_name: ${{ vars.AKS_CLUSTER }}
+      aks_resource_group: ${{ vars.AKS_RG }}
+    secrets: inherit
+
+  # ---------- CD to PROD (manual only) ----------
+  prod_backend_cd:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.prod == 'true'
+    name: Backend CD (prod)
+    uses: ./.github/workflows/backend-cd.yml
+    with:
+      aks_cluster_name: ${{ vars.AKS_CLUSTER }}
+      aks_resource_group: ${{ vars.AKS_RG }}
+      aks_acr_name: ${{ vars.AKS_ACR_NAME }}
+    secrets: inherit
+
+  prod_frontend_cd:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.prod == 'true'
+    name: Frontend CD (prod)
+    needs: prod_backend_cd
+    uses: ./.github/workflows/frontend-cd.yml
+    with:
+      product_api_ip: ${{ needs.prod_backend_cd.outputs.product_ip }}
+      order_api_ip:   ${{ needs.prod_backend_cd.outputs.order_ip }}
+      aks_cluster_name: ${{ vars.AKS_CLUSTER }}
+      aks_resource_group: ${{ vars.AKS_RG }}
+    secrets: inherit

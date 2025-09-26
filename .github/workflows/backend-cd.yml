@@ -1,6 +1,31 @@
 name: CD - Deploy Backend Services to AKS
 
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-backend-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
+  workflow_call:
+    inputs:
+      aks_cluster_name:
+        required: true
+        type: string
+      aks_resource_group:
+        required: true
+        type: string
+      aks_acr_name:
+        required: true
+        type: string
+    outputs:
+      product_ip:
+        description: Product LB IP
+        value: ${{ jobs.deploy_backend.outputs.PRODUCT_API_IP }}
+      order_ip:
+        description: Order LB IP
+        value: ${{ jobs.deploy_backend.outputs.ORDER_API_IP }}
   workflow_dispatch:
     inputs:
       aks_cluster_name:
@@ -33,24 +58,17 @@ jobs:
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-          enable-AzPSSession: true
 
-      - name: Set Kubernetes context (get AKS credentials)
-        run: |
-          az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
+      - name: Set AKS context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ inputs.aks_resource_group }}
+          cluster-name: ${{ inputs.aks_cluster_name }}
 
-      - name: Attach ACR
+      - name: ACR login (for image pulls)
         run: |
-          az aks update --name ${{ github.event.inputs.aks_cluster_name }} --resource-group ${{ github.event.inputs.aks_resource_group }} --attach-acr ${{ github.event.inputs.aks_acr_name }}
-
-      - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
-        run: |
-          echo "Deploying backend infrastructure..."
-          cd k8s/
-          kubectl apply -f configmaps.yaml
-          kubectl apply -f secrets.yaml
-          kubectl apply -f product-db.yaml
-          kubectl apply -f order-db.yaml
+          echo "Logging into ACR: ${{ inputs.aks_acr_name }}"
+          az acr login --name ${{ inputs.aks_acr_name }}
 
       - name: Deploy Backend Microservices (Product, Order)
         run: |
@@ -66,26 +84,25 @@ jobs:
           ORDER_IP=""
           
           for i in $(seq 1 60); do
-            echo "Attempt $i/60 to get IPs..."
-            PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            PRODUCT_IP=$(kubectl get svc product-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            ORDER_IP=$(kubectl get svc order-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
-            if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
-              echo "All backend LoadBalancer IPs assigned!"
+            if [ -n "$PRODUCT_IP" ] && [ -n "$ORDER_IP" ]; then
               echo "Product Service IP: $PRODUCT_IP"
               echo "Order Service IP: $ORDER_IP"
               break
             fi
-            sleep 5 # Wait 5 seconds before next attempt
+
+            echo "Still waiting... ($i/60)"
+            sleep 5
           done
-          
-          if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
-            echo "Error: One or more LoadBalancer IPs not assigned after timeout."
-            exit 1 # Fail the job if IPs are not obtained
+
+          if [ -z "$PRODUCT_IP" ] || [ -z "$ORDER_IP" ]; then
+            echo "Timed out waiting for LoadBalancer IPs"
+            exit 1
           fi
-          
-          # These are environment variables for subsequent steps in the *same job*
-          # And used to set the job outputs
+
+          # Export for later steps / outputs
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
           echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
 
