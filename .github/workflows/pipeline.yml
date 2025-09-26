@@ -1,4 +1,3 @@
-# .github/workflows/pipeline.yml
 name: Unified CI/CD Pipeline
 
 on:
@@ -110,7 +109,7 @@ jobs:
   backend-cd:
     runs-on: ubuntu-latest
     needs: backend-ci
-    if: github.ref == 'refs/heads/dev'
+    if: needs.detect-changes.outputs.backend == 'true' && github.ref == 'refs/heads/dev'
     steps:
       - uses: actions/checkout@v4
 
@@ -144,8 +143,8 @@ jobs:
   # ==========================
   frontend-cd:
     runs-on: ubuntu-latest
-    needs: [frontend-ci, backend-cd]
-    if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
+    needs: frontend-ci
+    if: needs.detect-changes.outputs.frontend == 'true' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
     steps:
       - uses: actions/checkout@v4
 
@@ -154,14 +153,14 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           
-      # Login to Azure Container Registry (ACR)
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
+      # optional: only if frontend needs backend service IPs injected
       - name: Inject Backend IPs into Frontend
         run: |
-          sed -i "s|_PRODUCT_API_URL_|${{ needs.backend-cd.outputs.PRODUCT_API_IP }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ needs.backend-cd.outputs.ORDER_API_IP }}|g" frontend/main.js
+          sed -i "s|_PRODUCT_API_URL_|http://product-service.default.svc.cluster.local|g" frontend/main.js
+          sed -i "s|_ORDER_API_URL_|http://order-service.default.svc.cluster.local|g" frontend/main.js
           echo "Updated main.js:"
           cat frontend/main.js
 
@@ -181,5 +180,3 @@ jobs:
         run: |
           cd k8s/
           kubectl apply -f frontend.yaml
-
-
