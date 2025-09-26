@@ -131,7 +131,7 @@ jobs:
           az aks update \
             --name ${{ secrets.AKS_CLUSTER_NAME }} \
             --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} \
-            --attach-acr ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+            --attach-acr ${{ secrets.AZURE_ACR_NAME }}
 
       - name: Deploy Backend
         run: |
@@ -177,3 +177,4 @@ jobs:
         run: |
           cd k8s/
           kubectl apply -f frontend.yaml
+
