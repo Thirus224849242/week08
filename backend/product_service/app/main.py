@@ -1,4 +1,4 @@
-# week08/backend/product_service/app/main.py
+# week08/backend/product_service/app/main.py ci test
 
 import logging
 import os
